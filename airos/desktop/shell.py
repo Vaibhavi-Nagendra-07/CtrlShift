@@ -1,13 +1,14 @@
 """
 AirOS Complete Desktop Shell with Spatial VisionOS Layout.
 Features:
+- Face-excluded precise hand tracking (never locks onto chin or face)
 - Translucent spatial floating circular app dock / launcher
 - Wallpaper selection & high-res background rendering
 - Window management with multi-workspace support
 - Floating Virtual Keyboard (AirType)
-- Camera HUD & real-time landmark feed
+- Camera HUD & real-time landmark feed with Face Shield indicator
 - Touchless adaptive cursor overlay
-- Integrated Browser, Microsoft 365, Persona Studio, Notes, Calc, Files, Gallery, Settings
+- Integrated Browser, Microsoft 365, Persona Studio, Music, Mindfulness, Notes, Calc, Files, Gallery, Settings
 """
 
 import os
@@ -38,6 +39,8 @@ from airos.apps.settings_app import SettingsApp
 from airos.apps.browser_app import BrowserApp
 from airos.apps.microsoft_app import MicrosoftHubApp
 from airos.apps.persona_app import PersonaPlaygroundApp
+from airos.apps.music_app import MusicPlayerApp
+from airos.apps.mindfulness_app import MindfulnessApp
 
 from airos.vision.camera import CameraWorker
 from airos.vision.landmarks import HandDetection
@@ -51,7 +54,6 @@ class AirOSShell(QWidget):
     def __init__(self, settings_mgr: Optional[SettingsManager] = None):
         super().__init__()
         self.settings = settings_mgr or SettingsManager()
-        # Default to Vision Spatial theme
         current_theme_name = str(self.settings.get("theme", "vision_spatial"))
         self.theme = get_theme(current_theme_name)
         
@@ -65,16 +67,18 @@ class AirOSShell(QWidget):
         self.state_machine = GestureStateMachine(config=self.settings._settings)
         self.native_adapter = NativeInputAdapter(enabled=bool(self.settings.get("native_input_enabled", False)))
 
-        # Registered Applications Suite
+        # Registered Applications Suite (VisionOS-inspired)
         self.app_registry = [
-            {"id": "browser", "name": "Safari / AirBrowse", "icon": "🧭", "color": "#007aff", "factory": lambda: BrowserApp()},
+            {"id": "browser", "name": "Safari", "icon": "🧭", "color": "#007aff", "factory": lambda: BrowserApp()},
+            {"id": "music", "name": "Music", "icon": "🎵", "color": "#fa2d48", "factory": lambda: MusicPlayerApp()},
+            {"id": "mindfulness", "name": "Mindfulness", "icon": "🌸", "color": "#00f5d4", "factory": lambda: MindfulnessApp()},
             {"id": "microsoft", "name": "Microsoft 365", "icon": "🏢", "color": "#0078d4", "factory": lambda: MicrosoftHubApp()},
-            {"id": "persona", "name": "Vision Persona AI", "icon": "👩‍🚀", "color": "#f72585", "factory": lambda: PersonaPlaygroundApp()},
+            {"id": "persona", "name": "Persona AI", "icon": "👩‍🚀", "color": "#f72585", "factory": lambda: PersonaPlaygroundApp()},
             {"id": "notes", "name": "Notes", "icon": "📝", "color": "#f59e0b", "factory": lambda: NotesApp(self.settings)},
-            {"id": "gallery", "name": "Photos & Gallery", "icon": "🌸", "color": "#ec4899", "factory": lambda: GalleryApp()},
+            {"id": "gallery", "name": "Photos", "icon": "🖼️", "color": "#ec4899", "factory": lambda: GalleryApp()},
             {"id": "calc", "name": "Calculator", "icon": "🧮", "color": "#3b82f6", "factory": lambda: CalculatorApp()},
             {"id": "files", "name": "Files", "icon": "📁", "color": "#10b981", "factory": lambda: FileManagerApp()},
-            {"id": "tutorial", "name": "Gesture Tutorial", "icon": "👋", "color": "#8b5cf6", "factory": lambda: self._create_tutorial()},
+            {"id": "tutorial", "name": "Tutorial", "icon": "👋", "color": "#8b5cf6", "factory": lambda: self._create_tutorial()},
             {"id": "settings", "name": "Settings", "icon": "⚙️", "color": "#64748b", "factory": lambda: self._create_settings()}
         ]
 
@@ -123,22 +127,21 @@ class AirOSShell(QWidget):
         self.spatial_dock.setStyleSheet("""
             QFrame#SpatialDock {
                 background-color: rgba(30, 26, 22, 0.45);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 36px;
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 40px;
             }
         """)
         
         dock_grid = QGridLayout(self.spatial_dock)
         dock_grid.setContentsMargins(28, 20, 28, 20)
         dock_grid.setHorizontalSpacing(32)
-        dock_grid.setVerticalSpacing(22)
+        dock_grid.setVerticalSpacing(20)
 
         for i, app in enumerate(self.app_registry):
             app_box = QVBoxLayout()
             app_box.setSpacing(6)
             app_box.setAlignment(Qt.AlignCenter)
 
-            # Circular App Icon Button
             btn = QPushButton(app["icon"])
             btn.setFixedSize(68, 68)
             btn.setStyleSheet(f"""
@@ -165,8 +168,8 @@ class AirOSShell(QWidget):
 
             container = QWidget()
             container.setLayout(app_box)
-            r = i // 5
-            c = i % 5
+            r = i // 6
+            c = i % 6
             dock_grid.addWidget(container, r, c)
 
         # Taskbar
@@ -247,7 +250,7 @@ class AirOSShell(QWidget):
             if self.native_adapter.enabled:
                 self.native_adapter.scroll(event.delta[1])
 
-        elif event.gesture == GestureType.OPEN_PALM:
+        elif event.gesture in (GestureType.OPEN_PALM, GestureType.FIST_TOGGLE_MENU):
             self._toggle_start_menu()
 
         elif event.gesture == GestureType.TOGGLE_KEYBOARD:
@@ -337,8 +340,7 @@ class AirOSShell(QWidget):
         content = app_entry["factory"]()
         win = AirWindow(app_id, app_entry["name"], content, parent=self.desktop_canvas, theme=self.theme)
         
-        # Sizing and offset
-        win.resize(800, 520)
+        win.resize(820, 530)
         offset = (len(win_map) * 35) % 180
         win.move(140 + offset, 45 + offset)
         win.window_closed.connect(self._on_window_closed)
@@ -367,21 +369,17 @@ class AirOSShell(QWidget):
         w = self.width()
         h = self.height()
 
-        # Center Spatial App Dock
-        dock_w = min(680, w - 80)
+        dock_w = min(780, w - 80)
         dock_h = 240
         self.spatial_dock.setGeometry((w - dock_w) // 2, (h - self.taskbar.height() - dock_h) // 2, dock_w, dock_h)
 
-        # Overlays
         self.cursor_overlay.setGeometry(0, 0, w, h)
         self.cursor_overlay.raise_()
 
-        # Anchor Camera HUD at bottom right above taskbar
         if hasattr(self, "camera_hud"):
             self.camera_hud.move(w - self.camera_hud.width() - 16, h - self.taskbar.height() - self.camera_hud.height() - 12)
             self.camera_hud.raise_()
 
-        # Anchor keyboard
         if hasattr(self, "keyboard") and self.keyboard.isVisible():
             kx = (w - self.keyboard.width()) // 2
             ky = h - self.taskbar.height() - self.keyboard.height() - 16
@@ -389,8 +387,6 @@ class AirOSShell(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        
-        # 1. Render wallpaper image if available
         wp_path = self.theme.get("wallpaper_file", "")
         if wp_path and os.path.exists(wp_path):
             pix = QPixmap(wp_path)
@@ -402,8 +398,7 @@ class AirOSShell(QWidget):
             grad.setColorAt(1.0, QColor(self.theme.get("bg_gradient_end", "#14100e")))
             painter.fillRect(self.rect(), grad)
 
-        # Ambient spatial lighting overlay
-        painter.fillRect(self.rect(), QColor(0, 0, 0, 40))
+        painter.fillRect(self.rect(), QColor(0, 0, 0, 30))
         painter.end()
 
     def closeEvent(self, event):

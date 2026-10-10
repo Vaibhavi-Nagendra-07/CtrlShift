@@ -7,6 +7,8 @@ from airos.apps.settings_app import SettingsApp
 from airos.apps.browser_app import BrowserApp
 from airos.apps.microsoft_app import MicrosoftHubApp
 from airos.apps.persona_app import PersonaPlaygroundApp
+from airos.apps.music_app import MusicPlayerApp
+from airos.apps.mindfulness_app import MindfulnessApp
 
 __all__ = [
     "NotesApp",
@@ -17,5 +19,7 @@ __all__ = [
     "SettingsApp",
     "BrowserApp",
     "MicrosoftHubApp",
-    "PersonaPlaygroundApp"
+    "PersonaPlaygroundApp",
+    "MusicPlayerApp",
+    "MindfulnessApp"
 ]
