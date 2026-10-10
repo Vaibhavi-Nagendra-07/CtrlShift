@@ -1,0 +1,15 @@
+# AirOS Requirements Specification
+# Core GUI and Windowing
+PySide6>=6.6.0
+
+# Computer Vision & Machine Learning
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Optional MediaPipe (installed / tasks API supported)
+mediapipe>=0.10.0
+
+# Native Desktop Mouse/Keyboard Interaction (opt-in)
+pyautogui>=0.9.54
+
+# Persistence & Data (built-in standard library sqlite3 & json)
