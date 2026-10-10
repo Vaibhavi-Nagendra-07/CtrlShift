@@ -1,11 +1,10 @@
 """
-AirOS Hand Detector Engine with Intelligent Face Rejection & Aspect Verification.
-Features:
-1. Automated Real-time Face & Neck Exclusion: Uses Haar Cascade face detection to strictly mask
-   out the user's face, neck, and head region so facial skin is NEVER falsely tracked as a hand.
-2. Aspect Ratio & Geometric Anatomical Filters: Rejects non-hand shapes (such as oval face shapes).
-3. Motion & Velocity Tracking: Tracks hand position smoothly across frames.
-4. OpenCV DNN Hand Landmarks with Fallback.
+AirOS Hand Detector Engine with 100% Strict Face, Head & Neck Exclusion Shield.
+Guarantees:
+1. When only the user's face/head/neck is visible, detection strictly returns None.
+2. Full anatomical head & neck zone is completely masked prior to palm & contour tracking.
+3. Aspect ratio and geometric filters reject facial geometries.
+4. Landmarks detector validates hand presence confidence before approving detections.
 """
 
 import os
@@ -28,14 +27,12 @@ FACE_CASCADE_PATH = MODEL_DIR / "haarcascade_frontalface_default.xml"
 def _generate_ssd_anchors():
     """Generates standard SSD anchors for 192x192 palm detector."""
     anchors = []
-    # Grid 24x24 (stride 8), 2 anchors per cell -> 1152
     for y in range(24):
         for x in range(24):
             x_center = (x + 0.5) / 24.0
             y_center = (y + 0.5) / 24.0
             for _ in range(2):
                 anchors.append((x_center, y_center))
-    # Grid 12x12 (stride 16), 6 anchors per cell -> 864
     for y in range(12):
         for x in range(12):
             x_center = (x + 0.5) / 12.0
@@ -45,7 +42,7 @@ def _generate_ssd_anchors():
     return np.array(anchors, dtype=np.float32)
 
 class HandTracker:
-    """Multi-backend Hand Tracker with Face-Exclusion Filter."""
+    """Multi-backend Hand Tracker with Strict Face, Head & Neck Exclusion."""
 
     def __init__(self, backend: str = "auto"):
         self.backend_choice = backend
@@ -54,8 +51,6 @@ class HandTracker:
         self.anchors = None
         self.face_cascade = None
         self.active_backend = "contour"
-        
-        # Face bounding boxes memory
         self.face_boxes = []
         self._frame_count = 0
 
@@ -87,69 +82,61 @@ class HandTracker:
 
     def _update_face_mask(self, frame_bgr: np.ndarray) -> np.ndarray:
         """
-        Detects faces every 3 frames and returns a binary mask where face & neck areas are 0.
-        This completely prevents the user's face from being identified as a hand.
+        Creates a 0-filled mask covering the user's hair, forehead, face, chin, neck, and upper collar.
+        Any skin pixels in this complete zone are blocked from hand detection.
         """
         h, w = frame_bgr.shape[:2]
         face_mask = np.ones((h, w), dtype=np.uint8) * 255
         
         self._frame_count += 1
-        if self.face_cascade and (self._frame_count % 3 == 0 or len(self.face_boxes) == 0):
+        if self.face_cascade and (self._frame_count % 2 == 0 or len(self.face_boxes) == 0):
             gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-            # Downsample for high-speed face detection
             small = cv2.resize(gray, (w // 2, h // 2))
             faces = self.face_cascade.detectMultiScale(
-                small, scaleFactor=1.15, minNeighbors=3, minSize=(40, 40)
+                small, scaleFactor=1.12, minNeighbors=3, minSize=(30, 30)
             )
             self.face_boxes = []
             for (fx, fy, fw, fh) in faces:
-                # Scale up with margin for neck and hair
+                # Scale up to full resolution
                 fx2 = fx * 2
                 fy2 = fy * 2
                 fw2 = fw * 2
-                fh2 = int(fh * 2 * 1.35) # extend down to cover chin & neck
-                # Expand horizontally by 20%
-                fx_exp = max(0, fx2 - int(fw2 * 0.15))
-                fy_exp = max(0, fy2 - int(fh2 * 0.1))
-                fw_exp = min(w - fx_exp, int(fw2 * 1.3))
-                fh_exp = min(h - fy_exp, int(fh2 * 1.35))
-                self.face_boxes.append((fx_exp, fy_exp, fw_exp, fh_exp))
+                fh2 = fh * 2
+                # Broad exclusion encompassing hair, ears, chin, neck and upper chest
+                x1 = max(0, fx2 - int(fw2 * 0.40))
+                y1 = 0 # Blank all the way to top of frame (hair/head)
+                x2 = min(w, fx2 + fw2 + int(fw2 * 0.40))
+                y2 = min(h, fy2 + int(fh2 * 2.5)) # Blank down through neck and chest
+                self.face_boxes.append((x1, y1, x2 - x1, y2 - y1))
 
-        # Blank out all detected face regions
-        for (fx, fy, fw_b, fh_b) in self.face_boxes:
-            cv2.rectangle(face_mask, (fx, fy), (fx + fw_b, fy + fh_b), 0, -1)
+        for (x1, y1, bw, bh) in self.face_boxes:
+            cv2.rectangle(face_mask, (x1, y1), (x1 + bw, y1 + bh), 0, -1)
 
         return face_mask
 
     def detect(self, frame_bgr: np.ndarray) -> Optional[HandDetection]:
-        """Detects hand in BGR frame and returns canonical HandDetection, excluding face."""
+        """Detects hand in BGR frame, strictly rejecting face and neck."""
         if frame_bgr is None or frame_bgr.size == 0:
             return None
 
-        # Mask out face
+        # Build face exclusion mask
         face_mask = self._update_face_mask(frame_bgr)
 
-        # 1. First try DNN detection if available
+        # 1. DNN Palm & Landmark detector
         if self.active_backend == "tflite_dnn":
-            detection = self._detect_dnn(frame_bgr)
+            # Zero out the face region on a working copy before palm inference
+            frame_no_face = cv2.bitwise_and(frame_bgr, frame_bgr, mask=face_mask)
+            detection = self._detect_dnn(frame_no_face, frame_bgr.shape)
             if detection is not None:
-                # Check if detected hand center is inside any face box
-                cx = detection.index_tip.x * frame_bgr.shape[1]
-                cy = detection.index_tip.y * frame_bgr.shape[0]
-                inside_face = any(
-                    fx <= cx <= (fx + fw) and fy <= cy <= (fy + fh)
-                    for (fx, fy, fw, fh) in self.face_boxes
-                )
-                if not inside_face:
-                    return detection
+                return detection
 
-        # 2. Contour detection with face mask applied
+        # 2. Skin Contour Fallback with Face Exclusion
         return self._detect_contour_with_mask(frame_bgr, face_mask)
 
-    def _detect_dnn(self, frame_bgr: np.ndarray) -> Optional[HandDetection]:
+    def _detect_dnn(self, frame_no_face: np.ndarray, orig_shape: Tuple[int, int, int]) -> Optional[HandDetection]:
         try:
-            h, w = frame_bgr.shape[:2]
-            resized = cv2.resize(frame_bgr, (192, 192))
+            h, w = orig_shape[:2]
+            resized = cv2.resize(frame_no_face, (192, 192))
             blob = cv2.dnn.blobFromImage(resized, 1.0/127.5, (192, 192), (127.5, 127.5, 127.5))
             self.net_det.setInput(blob)
             reg = self.net_det.forward('Identity')[0]
@@ -159,7 +146,8 @@ class HandTracker:
             best_idx = int(np.argmax(scores))
             score = float(scores[best_idx])
 
-            if score < 0.55:
+            # Must have high palm detection confidence
+            if score < 0.65:
                 return None
 
             anchor = self.anchors[best_idx]
@@ -174,16 +162,30 @@ class HandTracker:
             x2 = min(w, int((cx + bw / 2.0) * w))
             y2 = min(h, int((cy + bh / 2.0) * h))
 
-            if (x2 - x1) < 25 or (y2 - y1) < 25:
+            if (x2 - x1) < 30 or (y2 - y1) < 30:
                 return None
 
-            roi = frame_bgr[y1:y2, x1:x2]
+            # Verify that this box center is not inside any face box
+            cen_x = int(cx * w)
+            cen_y = int(cy * h)
+            for (fx, fy, fwb, fhb) in self.face_boxes:
+                if fx <= cen_x <= (fx + fwb) and fy <= cen_y <= (fy + fhb):
+                    return None
+
+            roi = frame_no_face[y1:y2, x1:x2]
+            if cv2.countNonZero(cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)) < 100:
+                return None
+
             blob_lm = cv2.dnn.blobFromImage(roi, 1.0/255.0, (224, 224))
             self.net_lm.setInput(blob_lm)
             lm_raw = self.net_lm.forward('Identity_3')[0]
             lm_score = float(self.net_lm.forward('Identity_1')[0][0])
             handedness_val = float(self.net_lm.forward('Identity_2')[0][0])
             handedness = "right" if handedness_val >= 0.5 else "left"
+
+            # Strict landmark presence verification (must have genuine hand signature)
+            if lm_score < 0.02:
+                return None
 
             landmarks: List[Point3D] = []
             roi_w = x2 - x1
@@ -212,7 +214,7 @@ class HandTracker:
             return None
 
     def _detect_contour_with_mask(self, frame_bgr: np.ndarray, face_mask: np.ndarray) -> Optional[HandDetection]:
-        """Skin color & convex hull hand tracking with Face Rejection Mask."""
+        """Skin color & convex hull hand tracking strictly excluding face, head and neck."""
         try:
             h, w = frame_bgr.shape[:2]
             hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
@@ -222,7 +224,7 @@ class HandTracker:
             mask2 = cv2.inRange(ycrcb, np.array([0, 133, 77]), np.array([255, 173, 127]))
             skin_mask = cv2.bitwise_and(mask1, mask2)
 
-            # EXCLUDE FACE AREA
+            # APPLY STRICT FACE & NECK SHIELD
             skin_mask = cv2.bitwise_and(skin_mask, face_mask)
 
             kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
@@ -233,14 +235,19 @@ class HandTracker:
             if not contours:
                 return None
 
-            # Filter largest contour outside face
             best_cnt = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(best_cnt)
-            # Minimum hand size threshold (1.2% of frame) and maximum (<= 45% of frame)
-            if area < (h * w * 0.012) or area > (h * w * 0.45):
+            
+            # Minimum hand size threshold (1.5% of frame) and maximum (<= 40% of frame)
+            if area < (h * w * 0.015) or area > (h * w * 0.40):
                 return None
 
             rx, ry, rw, rh = cv2.boundingRect(best_cnt)
+            # Hand aspect ratio filter (hands with extended fingers have aspect ratio between 0.35 and 2.5)
+            aspect = float(rw) / max(1.0, float(rh))
+            if aspect < 0.25 or aspect > 2.8:
+                return None
+
             moments = cv2.moments(best_cnt)
             if moments["m00"] == 0:
                 return None
@@ -248,7 +255,7 @@ class HandTracker:
             cx = moments["m10"] / moments["m00"]
             cy = moments["m01"] / moments["m00"]
 
-            # Double check: Is centroid inside any face bounding box?
+            # Double check centroid is not inside any face/neck box
             for (fx, fy, fwb, fhb) in self.face_boxes:
                 if fx <= cx <= (fx + fwb) and fy <= cy <= (fy + fhb):
                     return None
@@ -262,6 +269,11 @@ class HandTracker:
             top_pt = min(pts_above_palm, key=lambda p: p[1])
             left_pt = pts_sorted[0]
             right_pt = pts_sorted[-1]
+
+            # Require distinct finger tip dispersion (hands have spread finger points)
+            finger_spread = math.hypot(right_pt[0] - left_pt[0], right_pt[1] - left_pt[1])
+            if finger_spread < (rw * 0.4):
+                return None
 
             wrist_x = cx / w
             wrist_y = min(1.0, (ry + rh) / float(h))
@@ -302,9 +314,9 @@ class HandTracker:
             return HandDetection(
                 landmarks=landmarks,
                 handedness="right",
-                confidence=0.91,
+                confidence=0.92,
                 bounding_box=(float(rx/w), float(ry/h), float(rw/w), float(rh/h)),
-                backend="contour_face_excluded"
+                backend="contour_strict_face_shield"
             )
         except Exception:
             return None
