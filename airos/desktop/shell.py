@@ -29,6 +29,7 @@ from airos.desktop.window_manager import AirWindow
 from airos.desktop.keyboard import VirtualKeyboard
 from airos.desktop.camera_hud import CameraPreviewHUD
 from airos.desktop.cursor_overlay import AdaptiveCursorOverlay
+from airos.desktop.control_center import ControlCenterWidget
 
 from airos.apps.notes_app import NotesApp
 from airos.apps.calculator_app import CalculatorApp
@@ -178,7 +179,12 @@ class AirOSShell(QWidget):
         self.taskbar.workspace_changed.connect(self._switch_workspace)
         self.taskbar.window_tab_clicked.connect(self._focus_window)
         self.taskbar.keyboard_toggle_clicked.connect(self._toggle_keyboard)
+        self.taskbar.control_center_clicked.connect(self._toggle_control_center)
         main_layout.addWidget(self.taskbar)
+
+        # Control Center
+        self.control_center = ControlCenterWidget(self, theme=self.theme)
+        self.control_center.hide()
 
         # Start Menu
         self.start_menu = StartMenu(self.app_registry, self, theme=self.theme)
@@ -229,7 +235,7 @@ class AirOSShell(QWidget):
         if self.native_adapter.enabled:
             self.native_adapter.move_cursor(event.cursor_pos[0], event.cursor_pos[1])
 
-        if event.gesture == GestureType.PINCH_CLICK:
+        if event.gesture in (GestureType.PINCH_CLICK, GestureType.DWELL_CLICK):
             self._simulate_click_at(cx, cy)
             if self.native_adapter.enabled:
                 self.native_adapter.click(event.cursor_pos[0], event.cursor_pos[1])
@@ -265,22 +271,27 @@ class AirOSShell(QWidget):
     def _simulate_click_at(self, x: int, y: int):
         target = self.childAt(x, y)
         if target:
-            press_evt = QMouseEvent(QMouseEvent.MouseButtonPress, QPoint(x, y), self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
-            release_evt = QMouseEvent(QMouseEvent.MouseButtonRelease, QPoint(x, y), self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.NoButton, Qt.NoModifier)
+            local_pos = target.mapFromGlobal(self.mapToGlobal(QPoint(x, y)))
+            press_evt = QMouseEvent(QMouseEvent.MouseButtonPress, local_pos, self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+            release_evt = QMouseEvent(QMouseEvent.MouseButtonRelease, local_pos, self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.NoButton, Qt.NoModifier)
             QApplication.sendEvent(target, press_evt)
             QApplication.sendEvent(target, release_evt)
+            if isinstance(target, QPushButton):
+                target.animateClick(120)
 
     def _simulate_double_click_at(self, x: int, y: int):
         target = self.childAt(x, y)
         if target:
-            dbl_evt = QMouseEvent(QMouseEvent.MouseButtonDblClick, QPoint(x, y), self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
+            local_pos = target.mapFromGlobal(self.mapToGlobal(QPoint(x, y)))
+            dbl_evt = QMouseEvent(QMouseEvent.MouseButtonDblClick, local_pos, self.mapToGlobal(QPoint(x, y)), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier)
             QApplication.sendEvent(target, dbl_evt)
 
     def _simulate_scroll_at(self, x: int, y: int, delta: float):
         target = self.childAt(x, y)
         if target:
+            local_pos = target.mapFromGlobal(self.mapToGlobal(QPoint(x, y)))
             angle_delta = QPoint(0, int(delta * 120))
-            wheel_evt = QWheelEvent(QPoint(x, y), self.mapToGlobal(QPoint(x, y)), QPoint(), angle_delta, Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False)
+            wheel_evt = QWheelEvent(local_pos, self.mapToGlobal(QPoint(x, y)), QPoint(), angle_delta, Qt.NoButton, Qt.NoModifier, Qt.ScrollUpdate, False)
             QApplication.sendEvent(target, wheel_evt)
 
     def _on_virtual_key(self, key_text: str):
@@ -299,6 +310,16 @@ class AirOSShell(QWidget):
             self.start_menu.move(12, self.height() - self.taskbar.height() - self.start_menu.height() - 8)
             self.start_menu.show()
             self.start_menu.raise_()
+
+    def _toggle_control_center(self):
+        if self.control_center.isVisible():
+            self.control_center.hide()
+        else:
+            cx = self.width() - self.control_center.width() - 16
+            cy = self.height() - self.taskbar.height() - self.control_center.height() - 8
+            self.control_center.move(cx, cy)
+            self.control_center.show()
+            self.control_center.raise_()
 
     def _toggle_keyboard(self):
         if self.keyboard.isVisible():

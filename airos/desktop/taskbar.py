@@ -18,6 +18,7 @@ class Taskbar(QFrame):
     workspace_changed = Signal(int) # workspace index (0 or 1)
     window_tab_clicked = Signal(str) # app_id
     keyboard_toggle_clicked = Signal()
+    control_center_clicked = Signal()
 
     def __init__(self, parent=None, theme: dict = None):
         super().__init__(parent)
@@ -109,6 +110,24 @@ class Taskbar(QFrame):
         """)
         self.btn_kbd.clicked.connect(self.keyboard_toggle_clicked.emit)
         layout.addWidget(self.btn_kbd)
+
+        # Control Center Quick Button
+        self.btn_cc = QPushButton("🎛️ Controls")
+        self.btn_cc.setFixedHeight(32)
+        self.btn_cc.setStyleSheet("""
+            QPushButton {
+                background-color: #21262d;
+                color: #f59e0b;
+                border: 1px solid #30363d;
+                border-radius: 4px;
+                padding: 2px 8px;
+                font-size: 11px;
+                font-weight: 500;
+            }
+            QPushButton:hover { background-color: #30363d; }
+        """)
+        self.btn_cc.clicked.connect(self.control_center_clicked.emit)
+        layout.addWidget(self.btn_cc)
 
         # Clock & Date
         self.clock_label = QLabel()
