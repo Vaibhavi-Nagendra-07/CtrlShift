@@ -7,27 +7,59 @@ Draws:
 - Drag indicator
 """
 
+import time
+import math
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, QPoint, QRectF
+from PySide6.QtCore import Qt, QPoint, QRectF, QTimer
 from PySide6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 from airos.gestures.state_machine import GestureType, GestureEvent
 
 class AdaptiveCursorOverlay(QWidget):
-    """Floating transparent overlay that renders the touchless AirOS cursor."""
+    """Floating transparent overlay that renders the touchless AirOS cursor with 90FPS fluid interpolation."""
 
     def __init__(self, parent=None, theme: dict = None):
         super().__init__(parent)
         self.theme = theme or {}
-        self.cursor_norm_pos = (0.5, 0.5)
+        self.target_norm_pos = (0.5, 0.5)
+        self.display_norm_pos = (0.5, 0.5)
         self.gesture_event = None
         self.dwell_progress = 0.0
         self.cursor_visible = True
         self.is_large_target = False
+        self._last_tick_time = time.time()
 
         self.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_NoSystemBackground)
         self.setWindowFlags(Qt.SubWindow | Qt.FramelessWindowHint)
+
+        # 90 FPS ultra-smooth interpolation timer for butter-smooth cursor motion
+        self.render_timer = QTimer(self)
+        self.render_timer.timeout.connect(self._on_render_tick)
+        self.render_timer.start(11)
+
+    def _on_render_tick(self):
+        if not self.cursor_visible or not self.gesture_event:
+            return
+
+        now = time.time()
+        dt = max(0.001, min(0.04, now - self._last_tick_time))
+        self._last_tick_time = now
+
+        tx, ty = self.target_norm_pos
+        cx, cy = self.display_norm_pos
+        dx = tx - cx
+        dy = ty - cy
+
+        if abs(dx) > 0.0001 or abs(dy) > 0.0001:
+            # High-refresh 90 FPS continuous exponential smoothing:
+            # Eliminates micro-stutter with smooth frame-rate independent convergence
+            factor = 1.0 - math.exp(-32.0 * dt)
+            self.display_norm_pos = (
+                cx + dx * factor,
+                cy + dy * factor
+            )
+            self.update()
 
     def update_theme(self, theme: dict):
         self.theme = theme
@@ -35,7 +67,7 @@ class AdaptiveCursorOverlay(QWidget):
 
     def update_gesture_event(self, event: GestureEvent, is_large: bool = False):
         self.gesture_event = event
-        self.cursor_norm_pos = event.cursor_pos
+        self.target_norm_pos = event.cursor_pos
         self.dwell_progress = getattr(event, "dwell_progress", 0.0)
         self.is_large_target = is_large
         self.update()
@@ -53,8 +85,8 @@ class AdaptiveCursorOverlay(QWidget):
 
         w = self.width()
         h = self.height()
-        cx = int(self.cursor_norm_pos[0] * w)
-        cy = int(self.cursor_norm_pos[1] * h)
+        cx = int(self.display_norm_pos[0] * w)
+        cy = int(self.display_norm_pos[1] * h)
 
         base_radius = 18 if not self.is_large_target else 26
         gesture = self.gesture_event.gesture

@@ -4,6 +4,8 @@ Displays mirrored webcam feed, detected skeletal landmarks, gesture state badge,
 and one-click Emergency Pause control.
 """
 
+import time
+from typing import Optional
 import cv2
 import numpy as np
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
@@ -66,8 +68,23 @@ class CameraPreviewHUD(QFrame):
         self.video_label = QLabel("Initializing camera...")
         self.video_label.setAlignment(Qt.AlignCenter)
         self.video_label.setStyleSheet("background-color: #0d1117; border-radius: 6px; color: #8b949e; font-size: 10px;")
-        self.video_label.setFixedHeight(140)
+        self.video_label.setFixedHeight(135)
         layout.addWidget(self.video_label)
+
+        # Drawing mode badge (as in user screenshot: teal banner "Drawing: draw")
+        self.drawing_badge = QLabel("Drawing: draw")
+        self.drawing_badge.setAlignment(Qt.AlignCenter)
+        self.drawing_badge.setFixedHeight(22)
+        self.drawing_badge.setStyleSheet("""
+            background-color: #004d40;
+            color: #26a69a;
+            border: 1px solid #00796b;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+        """)
+        self.drawing_badge.hide()
+        layout.addWidget(self.drawing_badge)
 
         # Bottom gesture badge
         self.gesture_badge = QLabel("Gesture: Ready")
@@ -76,11 +93,62 @@ class CameraPreviewHUD(QFrame):
 
         self.setStyleSheet("""
             QFrame#CameraHUD {
-                background-color: rgba(22, 27, 34, 0.92);
+                background-color: rgba(22, 27, 34, 0.94);
                 border: 1px solid #30363d;
                 border-radius: 8px;
             }
         """)
+
+        self.is_drawing_active = False
+        self.drawing_state = "hover"
+        self._last_fps_time = time.time()
+        self._fps = 90.0
+
+    def set_drawing_mode(self, active: bool, state: str = "draw"):
+        self.is_drawing_active = active
+        self.drawing_state = state
+        if active:
+            self.setFixedSize(260, 235)
+            self.drawing_badge.show()
+            self.update_drawing_state(state)
+        else:
+            self.setFixedSize(260, 210)
+            self.drawing_badge.hide()
+
+    def update_drawing_state(self, state: str):
+        self.drawing_state = state
+        if not self.is_drawing_active:
+            return
+        if state == "draw":
+            self.drawing_badge.setText("Drawing: draw")
+            self.drawing_badge.setStyleSheet("""
+                background-color: #005b60;
+                color: #2dd4bf;
+                border: 1px solid #14b8a6;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: bold;
+            """)
+        elif state == "erase":
+            self.drawing_badge.setText("Drawing: erase")
+            self.drawing_badge.setStyleSheet("""
+                background-color: #7f1d1d;
+                color: #fca5a5;
+                border: 1px solid #ef4444;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: bold;
+            """)
+        else:
+            self.drawing_badge.setText("Drawing: hover")
+            self.drawing_badge.setStyleSheet("""
+                background-color: #1e293b;
+                color: #94a3b8;
+                border: 1px solid #334155;
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: bold;
+            """)
 
     def _toggle_pause(self):
         self.is_paused = not self.is_paused
@@ -97,32 +165,80 @@ class CameraPreviewHUD(QFrame):
 
         self.pause_toggled.emit(self.is_paused)
 
-    def update_frame(self, frame_bgr: np.ndarray, detection: HandDetection, event: GestureEvent):
+    def update_frame(self, frame_bgr: np.ndarray, detection: Optional[HandDetection], event: Optional[GestureEvent]):
         if self.is_paused or frame_bgr is None:
             return
 
-        # Render landmarks on frame copy
         h, w = frame_bgr.shape[:2]
         display_frame = frame_bgr.copy()
 
-        if detection and detection.is_valid:
-            # Draw bone connections
-            pts = [(int(p.x * w), int(p.y * h)) for p in detection.landmarks]
-            for start_idx, end_idx in HAND_CONNECTIONS:
-                cv2.line(display_frame, pts[start_idx], pts[end_idx], (88, 166, 255), 2)
-            for idx, pt in enumerate(pts):
-                color = (0, 240, 255) if idx == 8 else (0, 255, 128)
-                cv2.circle(display_frame, pt, 4, color, -1)
+        now = time.time()
+        dt = now - self._last_fps_time
+        if dt > 0:
+            current_fps = 1.0 / dt
+            self._fps = 0.93 * self._fps + 0.07 * current_fps
+        self._last_fps_time = now
 
-        # Convert to QPixmap
-        rgb_frame = cv2.cvtColor(display_frame, cv2.COLOR_BGR2RGB)
-        bytes_per_line = 3 * w
-        q_img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
-        pix = QPixmap.fromImage(q_img).scaled(
-            self.video_label.width(), self.video_label.height(),
-            Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation
+        # Overlay FPS & Gesture telemetry at top of frame (matching user screenshot)
+        g_desc = event.state_description if event else "Ready"
+        fps_text = f"FPS: {self._fps:.1f}  GESTURE: {g_desc[:12]}"
+        cv2.putText(display_frame, fps_text, (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0, 255, 128), 1, cv2.LINE_AA)
+
+        is_valid_hand = bool(
+            detection is not None 
+            and detection.is_valid 
+            and getattr(detection, 'is_anatomical_hand', True) 
+            and detection.confidence >= 0.50
         )
-        self.video_label.setPixmap(pix)
 
-        if event:
+        if is_valid_hand:
+            # 1. Bounding box around hand (matching touchless reference image)
+            pts = [(int(p.x * w), int(p.y * h)) for p in detection.landmarks]
+            xs = [pt[0] for pt in pts]
+            ys = [pt[1] for pt in pts]
+            x1 = max(0, min(xs) - 14)
+            y1 = max(0, min(ys) - 14)
+            x2 = min(w - 1, max(xs) + 14)
+            y2 = min(h - 1, max(ys) + 14)
+
+            # Draw sleek glowing bounding box
+            cv2.rectangle(display_frame, (x1, y1), (x2, y2), (0, 100, 255), 2)
+
+            # Handedness and confidence label badge above box (e.g. "Right 98%")
+            tag = f"{detection.handedness.title()} {int(detection.confidence * 100)}%"
+            (tw, th), _ = cv2.getTextSize(tag, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+            tag_y1 = max(0, y1 - th - 6)
+            cv2.rectangle(display_frame, (x1, tag_y1), (x1 + tw + 8, y1), (0, 100, 255), -1)
+            cv2.putText(display_frame, tag, (x1 + 4, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
+
+            # 2. Draw skeletal bone connections
+            for start_idx, end_idx in HAND_CONNECTIONS:
+                cv2.line(display_frame, pts[start_idx], pts[end_idx], (0, 230, 255), 2, cv2.LINE_AA)
+
+            # 3. Draw keypoint circles on joints
+            for idx, pt in enumerate(pts):
+                if idx == 8: # Index fingertip (pointer)
+                    cv2.circle(display_frame, pt, 6, (0, 255, 255), -1, cv2.LINE_AA)
+                    cv2.circle(display_frame, pt, 8, (255, 255, 255), 1, cv2.LINE_AA)
+                elif idx == 4: # Thumb tip
+                    cv2.circle(display_frame, pt, 5, (255, 200, 0), -1, cv2.LINE_AA)
+                else:
+                    cv2.circle(display_frame, pt, 4, (0, 255, 128), -1, cv2.LINE_AA)
+
+            self.status_dot.setStyleSheet("color: #3fb950; font-size: 14px;")
+        else:
+            self.status_dot.setStyleSheet("color: #8b949e; font-size: 14px;")
+
+        # Convert to QPixmap using hardware-accelerated OpenCV resize (eliminates Qt render bottleneck)
+        lbl_w = max(10, self.video_label.width())
+        lbl_h = max(10, self.video_label.height())
+        disp_resized = cv2.resize(display_frame, (lbl_w, lbl_h), interpolation=cv2.INTER_LINEAR)
+        rgb_frame = cv2.cvtColor(disp_resized, cv2.COLOR_BGR2RGB)
+        bytes_per_line = 3 * lbl_w
+        q_img = QImage(rgb_frame.data, lbl_w, lbl_h, bytes_per_line, QImage.Format_RGB888)
+        self.video_label.setPixmap(QPixmap.fromImage(q_img))
+
+        if event and is_valid_hand:
             self.gesture_badge.setText(f"Gesture: {event.state_description}")
+        else:
+            self.gesture_badge.setText("Ready (Raise hand to control)")

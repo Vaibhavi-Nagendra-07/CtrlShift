@@ -18,7 +18,47 @@
    - 🖼️ **Gallery**: Photo viewer with touchless next/prev navigation.
    - 👋 **Gesture Tutorial & Calibration Wizard**: Interactive guide and sensitivity sliders.
    - ⚙️ **Settings & Personalization**: Theme picker, Privacy Mode, and PyAutoGUI native bridge toggle.
-7. **Privacy First**: Frame inference is 100% on-device. No video is ever stored or streamed. Includes a one-click Emergency Pause HUD.
+7. **Draw on Screen (AirDraw & Annotation)**:
+   - Mid-air screen sketching and whiteboard overlays directly over the desktop.
+   - Real-time Camera HUD drawing badge (`Drawing: draw` / `Drawing: hover` / `Drawing: erase`).
+   - Multiple palettes: Vibrant Blue, Emerald, Crimson, Amber, Purple, White.
+   - Tools: Pen, Translucent Highlighter, Presentation Laser Pointer (fading glowing comet trail), and Eraser.
+   - **Smart Shape Snap**: Intelligent geometry detection that snaps hand-drawn sketches into perfect lines, circles/ellipses, and rectangles.
+   - High-resolution screen snapshot capture to PNG.
+8. **AirVoice Voice Commands & Speech Control**:
+   - Hands-free voice recognition powered by ambient speech detection.
+   - Natural language aliases for all apps, window controls, and drawing tools.
+   - Non-blocking Text-To-Speech audio feedback confirmations.
+   - Taskbar Voice HUD with live listening wave pulse and transcript bubble.
+9. **User Activity Records & Live Audit Monitor**:
+   - Automatic background logging of all user activities: application launches, mid-air gestures, voice commands, and logins.
+   - Dedicated **User Records App** with metric cards, category filtering, search, and JSON export.
+10. **Biometric Fingerprint Login & Lock Screen**:
+   - Futuristic glassmorphic lock screen with animated laser scanning fingerprint sensor.
+   - Dual-mode authentication: touch/click or touchless mid-air gesture hover to scan and unlock.
+   - 4-digit PIN keypad fallback and instant Start Menu / Voice command locking (`"Lock screen"`).
+11. **90 FPS Ultra-Smooth Motion Engine**:
+   - High-refresh rate decoupled pipeline with Lucas-Kanade optical tracking and multimedia timer precision.
+12. **Privacy First**: Frame inference is 100% on-device. No video is ever stored or streamed. Includes a one-click Emergency Pause HUD.
+
+---
+
+## 🎙️ AirVoice Commands Reference
+
+| Category | Spoken Phrases | Action |
+| :--- | :--- | :--- |
+| **Draw on Screen** | *"Start drawing"*, *"Draw on screen"*, *"Air draw"* | Opens the mid-air screen drawing overlay |
+| **Close Drawing** | *"Stop drawing"*, *"Exit drawing"* | Closes drawing overlay |
+| **Ink Colors** | *"Color blue"*, *"Color red"*, *"Color green"*, *"Yellow"* | Switches ink color immediately |
+| **Tools** | *"Pen"*, *"Highlighter"*, *"Eraser"*, *"Laser pointer"* | Switches active annotation tool |
+| **Smart Geometry**| *"Shape snap"*, *"Smart shape"* | Toggles geometric shape auto-snapping |
+| **Canvas Actions**| *"Clear screen"*, *"Undo"*, *"Redo"*, *"Save drawing"* | Clears canvas, steps history, or takes PNG screenshot |
+| **Launch Apps** | *"Open notes"*, *"Open calculator"*, *"Open browser"*, *"Files"*, *"User records"* | Launches corresponding application |
+| **System Control**| *"Show desktop"*, *"Start menu"*, *"Virtual keyboard"*, *"Lock screen"* | Toggles desktop, launcher, keyboard, or locks system |
+| **Security & Auth**| *"Lock screen"*, *"Lock computer"*, *"Lock"* | Locks system with Biometric Fingerprint Lock Screen |
+| **Workspaces** | *"Workspace one"*, *"Workspace two"* | Switches active virtual workspace |
+| **Tracking** | *"Pause tracking"*, *"Resume tracking"* | Freezes or unfreezes webcam gesture tracking |
+| **Feedback** | *"Mute voice"*, *"Unmute voice"*, *"Voice commands"* | Mutes speech confirmations or opens cheat sheet |
 
 ---
 

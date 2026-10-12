@@ -197,6 +197,13 @@ class ControlCenterWidget(QFrame):
                 }
             """)
 
+    def set_toggle_state(self, key: str, state: bool):
+        self.toggles_state[key] = state
+        if hasattr(self, "toggle_buttons") and key in self.toggle_buttons:
+            btn = self.toggle_buttons[key]
+            btn.setChecked(state)
+            self._apply_toggle_style(btn, state)
+
     def _on_toggle(self, key: str, btn: QPushButton):
         self.toggles_state[key] = not self.toggles_state[key]
         self._apply_toggle_style(btn, self.toggles_state[key])

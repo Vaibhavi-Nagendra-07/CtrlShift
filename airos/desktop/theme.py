@@ -8,6 +8,54 @@ from pathlib import Path
 WALLPAPERS_DIR = Path(__file__).resolve().parent.parent.parent / "assets" / "wallpapers"
 
 THEMES = {
+    "windows_11_fluent": {
+        "name": "Windows 11 Fluent (Light Bloom)",
+        "wallpaper_file": str(WALLPAPERS_DIR / "win11_bloom.jpg"),
+        "bg_gradient_start": "#d9e5f3",
+        "bg_gradient_mid": "#c5d6e9",
+        "bg_gradient_end": "#b0c5dd",
+        "taskbar_bg": "rgba(243, 246, 251, 0.88)",
+        "window_bg": "rgba(255, 255, 255, 0.94)",
+        "window_header": "rgba(240, 244, 250, 0.96)",
+        "card_bg": "rgba(255, 255, 255, 0.88)",
+        "card_border": "rgba(0, 0, 0, 0.10)",
+        "accent": "#0067c0",
+        "accent_hover": "#1979d2",
+        "accent_active": "#005a9e",
+        "text_primary": "#1b1b1b",
+        "text_secondary": "#5a5a5a",
+        "text_muted": "#7a7a7a",
+        "danger": "#c42b1c",
+        "success": "#107c41",
+        "warning": "#ca5010",
+        "cursor_color": "#0067c0",
+        "cursor_ring": "rgba(0, 103, 192, 0.40)",
+        "cursor_intent": "#0067c0"
+    },
+    "windows_11_dark": {
+        "name": "Windows 11 Fluent (Dark Mica)",
+        "wallpaper_file": str(WALLPAPERS_DIR / "win11_dark_bloom.jpg"),
+        "bg_gradient_start": "#171d26",
+        "bg_gradient_mid": "#1c2430",
+        "bg_gradient_end": "#141922",
+        "taskbar_bg": "rgba(32, 38, 48, 0.86)",
+        "window_bg": "rgba(36, 42, 54, 0.94)",
+        "window_header": "rgba(44, 52, 66, 0.96)",
+        "card_bg": "rgba(40, 48, 60, 0.85)",
+        "card_border": "rgba(255, 255, 255, 0.12)",
+        "accent": "#4cc2ff",
+        "accent_hover": "#68cdff",
+        "accent_active": "#0091ff",
+        "text_primary": "#ffffff",
+        "text_secondary": "#c5c9d1",
+        "text_muted": "#8e94a0",
+        "danger": "#ff6b6b",
+        "success": "#4ade80",
+        "warning": "#fbbf24",
+        "cursor_color": "#4cc2ff",
+        "cursor_ring": "rgba(76, 194, 255, 0.45)",
+        "cursor_intent": "#4cc2ff"
+    },
     "vision_spatial": {
         "name": "Vision Spatial (Beige Ambient)",
         "wallpaper_file": str(WALLPAPERS_DIR / "living_room.jpg"),
@@ -130,5 +178,5 @@ THEMES = {
     }
 }
 
-def get_theme(theme_name: str = "vision_spatial") -> dict:
-    return THEMES.get(theme_name, THEMES["vision_spatial"])
+def get_theme(theme_name: str = "windows_11_fluent") -> dict:
+    return THEMES.get(theme_name, THEMES["windows_11_fluent"])

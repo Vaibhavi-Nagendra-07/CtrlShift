@@ -70,6 +70,74 @@ class HandDetection:
     def is_valid(self) -> bool:
         return len(self.landmarks) == 21
 
+    @property
+    def is_anatomical_hand(self) -> bool:
+        """
+        Validates whether the 21 landmarks correspond to a plausible human hand topology.
+        Filters out false positive detections triggered on background textures, wall edges, or clothing.
+        """
+        if len(self.landmarks) != 21:
+            return False
+
+        # 1. Palm length check (wrist 0 to middle MCP 9)
+        # Normal hand palm in normalized frame is between ~0.035 and ~0.48
+        wrist = self.landmarks[WRIST]
+        mid_mcp = self.landmarks[MIDDLE_MCP]
+        palm_dist = wrist.distance_2d(mid_mcp)
+        if palm_dist < 0.035 or palm_dist > 0.48:
+            return False
+
+        # 2. Knuckle chain ordering & distances
+        # Knuckles: index_mcp(5), mid_mcp(9), ring_mcp(13), pinky_mcp(17)
+        idx_mcp = self.landmarks[INDEX_MCP]
+        ring_mcp = self.landmarks[RING_MCP]
+        pky_mcp = self.landmarks[PINKY_MCP]
+
+        d_5_9 = idx_mcp.distance_2d(mid_mcp)
+        d_9_13 = mid_mcp.distance_2d(ring_mcp)
+        d_13_17 = ring_mcp.distance_2d(pky_mcp)
+
+        # Knuckle span shouldn't exceed 1.25x palm distance or be microscopic
+        if d_5_9 > (palm_dist * 1.25) or d_9_13 > (palm_dist * 1.25) or d_13_17 > (palm_dist * 1.25):
+            return False
+
+        # Total knuckle span from index base (5) to pinky base (17)
+        knuckle_span = idx_mcp.distance_2d(pky_mcp)
+        if knuckle_span < (palm_dist * 0.18) or knuckle_span > (palm_dist * 1.85):
+            return False
+
+        # 3. Overall bounding box extent relative to palm distance
+        # A human hand (palm + fingers) is at most ~3.5x the palm base length
+        xs = [p.x for p in self.landmarks]
+        ys = [p.y for p in self.landmarks]
+        span_x = max(xs) - min(xs)
+        span_y = max(ys) - min(ys)
+        max_span = max(span_x, span_y)
+        if max_span > (palm_dist * 3.6) or max_span < (palm_dist * 0.5):
+            return False
+
+        # 4. Finger segment length sanity (no exploded / collapsed bones)
+        # Check index and middle finger segments
+        finger_chains = [
+            (5, 6, 7, 8),     # Index
+            (9, 10, 11, 12),  # Middle
+            (13, 14, 15, 16), # Ring
+            (17, 18, 19, 20)  # Pinky
+        ]
+        for mcp_idx, pip_idx, dip_idx, tip_idx in finger_chains:
+            mcp = self.landmarks[mcp_idx]
+            pip = self.landmarks[pip_idx]
+            dip = self.landmarks[dip_idx]
+            tip = self.landmarks[tip_idx]
+            seg1 = mcp.distance_2d(pip)
+            seg2 = pip.distance_2d(dip)
+            seg3 = dip.distance_2d(tip)
+            # Bone segments cannot be massively larger than palm
+            if seg1 > (palm_dist * 1.3) or seg2 > (palm_dist * 1.3) or seg3 > (palm_dist * 1.3):
+                return False
+
+        return True
+
     def get(self, idx: int) -> Point3D:
         return self.landmarks[idx]
 
